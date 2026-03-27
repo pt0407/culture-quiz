@@ -1,11 +1,3 @@
-let supabase;
-
-try {
-    supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
-} catch (error) {
-    console.error("Supabase initialization error:", error);
-}
-
 const questions = [
     {
         question: "If it's 1910 and you want to ditch traditional art for abstract shapes, which movement are you joining?",
@@ -159,7 +151,7 @@ function loadQuestion() {
     const question = questions[currentQuestion];
     elements.questionText.textContent = question.question;
     elements.questionCounter.textContent = `Question ${currentQuestion + 1} of ${questions.length}`;
-    
+
     elements.optionsContainer.innerHTML = '';
     question.options.forEach((option, index) => {
         const optionDiv = document.createElement('div');
@@ -175,7 +167,7 @@ function loadQuestion() {
 
 function selectOption(selectedIndex, selectedDiv) {
     const allOptions = document.querySelectorAll('.option');
-    
+
     if (allOptions[0].classList.contains('disabled')) {
         return;
     }
@@ -227,14 +219,9 @@ function submitQuiz() {
 
 async function submitScore() {
     const playerName = elements.playerName.value.trim();
-    
+
     if (!playerName) {
         alert('Please enter your name!');
-        return;
-    }
-
-    if (!supabase) {
-        alert('Supabase not configured. Please check supabase-config.js');
         return;
     }
 
@@ -246,69 +233,66 @@ async function submitScore() {
         score: score,
         total: questions.length,
         time: elapsed,
-        accuracy: accuracyPercent,
-        timestamp: new Date().toISOString()
+        accuracy: accuracyPercent
     };
 
     elements.submitScoreBtn.disabled = true;
     elements.submitScoreBtn.textContent = 'Submitting...';
 
-    const { error } = await supabase
-        .from('leaderboard')
-        .insert([scoreData]);
+    try {
+        const response = await fetch(`${API_URL}/api/leaderboard`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(scoreData)
+        });
 
-    if (error) {
-        console.error('Error submitting score:', error);
+        if (!response.ok) {
+            throw new Error('Server error');
+        }
+
+        showLeaderboard();
+    } catch (err) {
+        console.error('Error submitting score:', err);
         alert('Failed to submit score. Please try again.');
         elements.submitScoreBtn.disabled = false;
         elements.submitScoreBtn.textContent = 'Submit Score';
-    } else {
-        showLeaderboard();
     }
 }
 
 async function showLeaderboard() {
-    if (!supabase) {
-        alert('Supabase not configured. Please check supabase-config.js');
-        return;
-    }
-
     elements.leaderboardBody.innerHTML = '<tr><td colspan="5" style="text-align: center;">Loading...</td></tr>';
     elements.noScores.style.display = 'none';
     showScreen('leaderboard');
 
-    const { data: leaderboard, error } = await supabase
-        .from('leaderboard')
-        .select('*')
-        .order('score', { ascending: false })
-        .order('time', { ascending: true });
+    try {
+        const response = await fetch(`${API_URL}/api/leaderboard`);
+        if (!response.ok) throw new Error('Server error');
+        const leaderboard = await response.json();
 
-    if (error) {
-        console.error('Error loading leaderboard:', error);
+        if (!leaderboard || leaderboard.length === 0) {
+            elements.leaderboardBody.innerHTML = '';
+            elements.noScores.style.display = 'block';
+        } else {
+            elements.noScores.style.display = 'none';
+            elements.leaderboardBody.innerHTML = leaderboard.map((entry, index) => {
+                const minutes = Math.floor(entry.time / 60);
+                const seconds = entry.time % 60;
+                const timeString = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+
+                return `
+                    <tr>
+                        <td>${index + 1}</td>
+                        <td>${entry.name}</td>
+                        <td>${entry.score}/${entry.total}</td>
+                        <td>${timeString}</td>
+                        <td>${entry.accuracy}%</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+    } catch (err) {
+        console.error('Error loading leaderboard:', err);
         elements.leaderboardBody.innerHTML = '<tr><td colspan="5" style="text-align: center;">Failed to load leaderboard</td></tr>';
-        return;
-    }
-
-    if (!leaderboard || leaderboard.length === 0) {
-        elements.leaderboardBody.innerHTML = '';
-        elements.noScores.style.display = 'block';
-    } else {
-        elements.noScores.style.display = 'none';
-        elements.leaderboardBody.innerHTML = leaderboard.map((entry, index) => {
-            const minutes = Math.floor(entry.time / 60);
-            const seconds = entry.time % 60;
-            const timeString = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-            
-            return `
-                <tr>
-                    <td>${index + 1}</td>
-                    <td>${entry.name}</td>
-                    <td>${entry.score}/${entry.total}</td>
-                    <td>${timeString}</td>
-                    <td>${entry.accuracy}%</td>
-                </tr>
-            `;
-        }).join('');
     }
 }
 
